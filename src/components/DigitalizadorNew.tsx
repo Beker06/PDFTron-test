@@ -12,7 +12,7 @@ interface SplitFile {
     url: string;
 }
 
-const Digitalizador = () => {
+const DigitalizadorNew = () => {
 
     const [selectedFile, setSelectedFile] = useState<File | null>(null);
     const [splitFiles, setSplitFiles] = useState<SplitFile[]>([]);
@@ -25,68 +25,142 @@ const Digitalizador = () => {
         const i = Math.floor(Math.log(bytes) / Math.log(k));
         return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
     };
-    
-    const splitPDF = async (file: File) => {
+
+    const splitRemovePdf = async (file: File) => {
         try {
-            const fileBuffer = await file.arrayBuffer();
-            const pdfDoc = await PDFDocument.load(fileBuffer, {
-                parseSpeed: 100,
+            console.log("🔹 Iniciando división del PDF...");
+    
+            const originalArrayBuffer = await file.arrayBuffer();
+            const originalPdfDoc = await PDFDocument.load(originalArrayBuffer, {
                 ignoreEncryption: true,
                 updateMetadata: false
             });
-            const numberOfPages = pdfDoc.getPageCount();
-            const avgPageSize = file.size / numberOfPages;
-            const pagesPerChunk = Math.floor(MAX_CHUNK_SIZE / avgPageSize);
-            const totalChunks = Math.ceil(numberOfPages / pagesPerChunk);
+    
+            const pageCount = originalPdfDoc.getPageCount();
             const newSplitFiles: SplitFile[] = [];
-
-            console.log("Archivo", pdfDoc);
-            console.log(`
-                Tamaño de PDF: ${formatFileSize(file.size)}
-                Paginas totales de pdf: ${numberOfPages}
-                Average Page Size: ${formatFileSize(avgPageSize)}
-                Maximo Tamaño de Chunk(2.7): ${formatFileSize(MAX_CHUNK_SIZE)} 
-                Paginas por chunk: ${pagesPerChunk}
-                Chunks Totales: ${totalChunks}
-            `)
-
+    
+            const avgPageSize = file.size / pageCount;
+            const pagesPerChunk = Math.floor(MAX_CHUNK_SIZE / avgPageSize);
+            const totalChunks = Math.ceil(pageCount / pagesPerChunk);
+    
+            console.log(`📄 PDF Cargado: ${file.name}
+                ➤ Tamaño: ${formatFileSize(file.size)}
+                ➤ Total de páginas: ${pageCount}
+                ➤ Páginas por fragmento: ${pagesPerChunk}
+                ➤ Total de fragmentos: ${totalChunks}
+            `);
+    
             for (let i = 0; i < totalChunks; i++) {
-                const newPdfDoc = await PDFDocument.create({
-                    updateMetadata: false
-                });
-
-                const startIdx = i * pagesPerChunk;
-                const endIdx = Math.min((i + 1) * pagesPerChunk, numberOfPages);
-                for (let pageIdx = startIdx; pageIdx < endIdx; pageIdx++) {
-                    const [copiedPage] = await newPdfDoc.copyPages(pdfDoc, [pageIdx]);
-                    newPdfDoc.addPage(copiedPage);
-                }
-
-                if (newPdfDoc.getPageCount() > 0) {
-                    const pdfBytes = await newPdfDoc.save({
-                        useObjectStreams: false,
-                        updateFieldAppearances: false,
+                const startPage = i * pagesPerChunk;
+                const endPage = Math.min((i + 1) * pagesPerChunk, pageCount);
+    
+                console.log(`📌 Procesando fragmento ${i + 1}: páginas ${startPage + 1} - ${endPage}`);
+    
+                try {
+                    const bufferCopy = new Uint8Array(originalArrayBuffer);
+                    const newDoc = await PDFDocument.load(bufferCopy, {
+                        ignoreEncryption: true,
+                        updateMetadata: false
+                    });
+    
+                    // Páginas a eliminar (las que NO están en el rango actual)
+                    const pagesToRemove = [];
+                    for (let j = 0; j < pageCount; j++) {
+                        if (j < startPage || j >= endPage) {
+                            pagesToRemove.push(j);
+                        }
+                    }
+    
+                    // ⚠️ Importante: eliminar de mayor a menor para evitar problemas de indexación
+                    pagesToRemove.reverse().forEach((pageIndex) => newDoc.removePage(pageIndex));
+    
+                    const pdfBytes = await newDoc.save({
+                        useObjectStreams: true
                     });
                     const blob = new Blob([pdfBytes], { type: 'application/pdf' });
                     const url = URL.createObjectURL(blob);
-
+    
                     newSplitFiles.push({
                         name: `${file.name.split('.')[0]}_part${i + 1}.pdf`,
                         size: blob.size,
                         url: url,
                     });
+    
+                } catch (error) {
+                    console.error('❌ Error al eliminar páginas:', error);
                 }
             }
-
+    
             setSplitFiles(newSplitFiles);
+            console.log("✅ División completada.");
+            
         } catch (error) {
-            console.error('Error splitting PDF:', error);
-            alert('Error splitting PDF. Please try again.');
+            console.error('❌ Error al dividir el PDF:', error);
+            alert('Error al dividir el PDF. Inténtalo de nuevo.');
         }
     };
 
+    // const splitPDF = async (file: File) => {
+    //     try {
+    //         const fileBuffer = await file.arrayBuffer();
+    //         const pdfDoc = await PDFDocument.load(fileBuffer, {
+    //             parseSpeed: 100,
+    //             ignoreEncryption: true,
+    //             updateMetadata: false
+    //         });
+    //         const numberOfPages = pdfDoc.getPageCount();
+    //         const avgPageSize = file.size / numberOfPages;
+    //         const pagesPerChunk = Math.floor(MAX_CHUNK_SIZE / avgPageSize);
+    //         const totalChunks = Math.ceil(numberOfPages / pagesPerChunk);
+    //         const newSplitFiles: SplitFile[] = [];
+
+    //         console.log("Archivo", pdfDoc);
+    //         console.log(`
+    //             Tamaño de PDF: ${formatFileSize(file.size)}
+    //             Paginas totales de pdf: ${numberOfPages}
+    //             Average Page Size: ${formatFileSize(avgPageSize)}
+    //             Maximo Tamaño de Chunk(2.7): ${formatFileSize(MAX_CHUNK_SIZE)} 
+    //             Paginas por chunk: ${pagesPerChunk}
+    //             Chunks Totales: ${totalChunks}
+    //         `)
+
+    //         for (let i = 0; i < totalChunks; i++) {
+    //             const newPdfDoc = await PDFDocument.create({
+    //                 updateMetadata: false
+    //             });
+
+    //             const startIdx = i * pagesPerChunk;
+    //             const endIdx = Math.min((i + 1) * pagesPerChunk, numberOfPages);
+    //             for (let pageIdx = startIdx; pageIdx < endIdx; pageIdx++) {
+    //                 const [copiedPage] = await newPdfDoc.copyPages(pdfDoc, [pageIdx]);
+    //                 newPdfDoc.addPage(copiedPage);
+    //             }
+
+    //             if (newPdfDoc.getPageCount() > 0) {
+    //                 const pdfBytes = await newPdfDoc.save({
+    //                     useObjectStreams: false,
+    //                     updateFieldAppearances: false,
+    //                 });
+    //                 const blob = new Blob([pdfBytes], { type: 'application/pdf' });
+    //                 const url = URL.createObjectURL(blob);
+
+    //                 newSplitFiles.push({
+    //                     name: `${file.name.split('.')[0]}_part${i + 1}.pdf`,
+    //                     size: blob.size,
+    //                     url: url,
+    //                 });
+    //             }
+    //         }
+
+    //         setSplitFiles(newSplitFiles);
+    //     } catch (error) {
+    //         console.error('Error splitting PDF:', error);
+    //         alert('Error splitting PDF. Please try again.');
+    //     }
+    // };
+
     const splitFile = async (file: File) => {
-        await splitPDF(file);
+        await splitRemovePdf(file);
     };
 
     const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -270,4 +344,4 @@ const Digitalizador = () => {
     );
 }
 
-export default Digitalizador
+export default DigitalizadorNew;
